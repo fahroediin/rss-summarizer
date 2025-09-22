@@ -1,4 +1,5 @@
 const cron = require('node-cron');
+const config = require('./src/config/environment');
 const { fetchArticles } = require('./src/agents/fetcher.agent');
 const { categorizeArticle } = require('./src/agents/categorizer.agent');
 const { processAndStoreSummaries } = require('./src/agents/summarizer.agent');
@@ -76,11 +77,19 @@ async function runWorkflow() {
 // Jalankan sekali saat aplikasi dimulai
 runWorkflow();
 
-// Jadwalkan untuk berjalan setiap hari pada jam 5 pagi.
-cron.schedule('0 5 * * *', () => {
-    console.log(`⏰ Menjalankan siklus terjadwal harian pada jam 5 pagi... [${new Date().toISOString()}]`);
+// Validasi sederhana untuk string cron
+if (!cron.validate(config.cronSchedule)) {
+    console.error(`❌ Jadwal cron "${config.cronSchedule}" tidak valid. Harap periksa file .env Anda.`);
+    process.exit(1); // Keluar dari aplikasi jika jadwal tidak valid
+}
+
+// Jadwalkan tugas menggunakan konfigurasi dari .env
+cron.schedule(config.cronSchedule, () => {
+    console.log(`⏰ Menjalankan siklus terjadwal... [${new Date().toISOString()}]`);
     runWorkflow();
 }, {
     scheduled: true,
-    timezone: "Asia/Jakarta" // <-- PENTING: Tentukan zona waktu!
+    timezone: config.cronTimezone
 });
+
+console.log(`✅ Penjadwal (cron job) telah diaktifkan. Jadwal: "${config.cronSchedule}" di zona waktu "${config.cronTimezone}".`);
