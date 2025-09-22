@@ -1,0 +1,19 @@
+{
+  "name": "rss-summarizer",
+  "version": "1.0.0",
+  "description": "Agentic AI to fetch, categorize, summarize RSS feeds and send notifications.",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.2.1",
+    "@supabase/supabase-js": "^2.39.7",
+    "dotenv": "^16.4.5",
+    "mercury-parser": "^1.0.0",
+    "node-cron": "^3.0.3",
+    "qrcode-terminal": "^0.12.0",
+    "rss-parser": "^3.13.0",
+    "whatsapp-web.js": "^1.23.0"
+  }
+}
