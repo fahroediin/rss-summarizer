@@ -1,19 +1,23 @@
 const Parser = require('rss-parser');
+const config = require('../config/environment'); // <-- Impor konfigurasi
+
 const parser = new Parser();
 
-const RSS_FEEDS = [
-   // 'https://www.theverge.com/rss/index.xml',
-   // 'https://rss.detik.com/index.php/detikcom',
-    'https://www.cnbcindonesia.com/news/rss'
-    //'https://www.reuters.com/news/rss',
-];
+// Gunakan daftar RSS dari file konfigurasi
+const RSS_FEEDS = config.rssFeedUrls;
 
 async function fetchArticles() {
     console.log('Fetcher Agent: Memulai pengambilan artikel...');
+
+    if (!RSS_FEEDS || RSS_FEEDS.length === 0) {
+        console.warn('⚠️ Tidak ada URL RSS yang dikonfigurasi di file .env. Melewati tahap fetching.');
+        return [];
+    }
+
     let allArticles = [];
     for (const url of RSS_FEEDS) {
         try {
-            const feed = await parser.parseURL(url);
+            const feed = await parser.parseURL(url.trim()); // .trim() untuk jaga-jaga jika ada spasi
             feed.items.forEach(item => {
                 allArticles.push({
                     title: item.title,
