@@ -39,21 +39,20 @@ async function summarizeLongText(text, model) {
  * @returns {Promise<string>} Ringkasan sintesis.
  */
 async function synthesizeMultipleContents(contents, category, model) {
-    // Gabungkan semua konten menjadi satu teks besar, dipisahkan oleh pembatas yang jelas.
     const combinedText = contents
         .map((content, index) => `--- ARTIKEL ${index + 1} ---\n${content}`)
         .join('\n\n');
 
-    // Prompt Engineering: Instruksi yang jauh lebih spesifik
+    // --- PROMPT YANG DIPERBARUI ---
     const prompt = `
-        Anda adalah seorang editor berita senior yang sangat cerdas.
-        Tugas Anda adalah membaca beberapa artikel berita dalam kategori "${category}" dan menulis sebuah ringkasan SINTESIS yang menangkap tema-tema utama, tren, atau peristiwa paling signifikan dari SEMUA artikel tersebut.
+        Anda adalah seorang editor berita senior yang sangat cerdas dan ringkas.
+        Tugas Anda adalah membaca beberapa artikel berita dalam kategori "${category}" dan menulis sebuah ringkasan SINTESIS yang menangkap tema-tema utama dari SEMUA artikel tersebut.
 
-        ATURAN:
-        1. JANGAN hanya meringkas satu artikel. Temukan benang merah atau poin-poin penting dari semua artikel yang disediakan.
+        ATURAN PENTING:
+        1. JANGAN hanya meringkas satu artikel. Temukan benang merah dari semua artikel.
         2. Tulis dalam 2-4 paragraf singkat atau poin-poin (bullet points).
         3. Gunakan Bahasa Indonesia yang formal dan netral.
-        4. Fokus pada "apa" dan "mengapa" dari berita-berita tersebut secara kolektif.
+        4. **LANGSUNG ke isi ringkasan. JANGAN menulis kalimat pembuka seperti "Berikut adalah sintesis..." atau kalimat penutup apa pun.**
 
         Berikut adalah konten dari beberapa artikel berita:
         ${combinedText}
@@ -61,9 +60,6 @@ async function synthesizeMultipleContents(contents, category, model) {
 
     console.log(`- Synthesizing ${contents.length} articles for category [${category}]...`);
     
-    // Kita bisa menggunakan summarizeLongText jika gabungan teksnya sangat panjang,
-    // tapi untuk 3-5 artikel, biasanya satu panggilan langsung sudah cukup dan lebih baik hasilnya.
-    // Jika Anda sering mengalami error token di sini, baru gunakan strategi Map-Reduce.
     return getGeminiResponse(model, prompt);
 }
 
