@@ -1,6 +1,5 @@
 require('dotenv').config();
 
-// Ambil string RSS dari .env, atau string kosong jika tidak ada
 const rssFeedsString = process.env.RSS_FEED_URLS || '';
 
 const config = {
@@ -14,10 +13,13 @@ const config = {
         botToken: process.env.TELEGRAM_BOT_TOKEN,
         chatId: process.env.TELEGRAM_CHAT_ID,
     },
-    // Proses string menjadi array
-    // .split(',') akan memecah string berdasarkan koma
-    // .filter(Boolean) akan menghapus string kosong jika ada koma di akhir
     rssFeedUrls: rssFeedsString.split(',').filter(Boolean),
+    
+    // --- VARIABEL BARU UNTUK CRON ---
+    // Ambil jadwal dari .env, jika tidak ada, default ke jam 5 pagi setiap hari
+    cronSchedule: process.env.CRON_SCHEDULE || '0 5 * * *',
+    // Ambil timezone dari .env, jika tidak ada, default ke Asia/Jakarta
+    cronTimezone: process.env.CRON_TIMEZONE || 'Asia/Jakarta',
 };
 
 module.exports = config;
