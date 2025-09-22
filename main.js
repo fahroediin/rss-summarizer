@@ -76,7 +76,11 @@ async function runWorkflow() {
 // Jalankan sekali saat aplikasi dimulai
 runWorkflow();
 
-// Jadwalkan untuk berjalan setiap 4 jam (contoh)
-// cron.schedule('0 */4 * * *', () => {
-//     runWorkflow();
-// });
+// Jadwalkan untuk berjalan setiap hari pada jam 5 pagi.
+cron.schedule('0 5 * * *', () => {
+    console.log(`⏰ Menjalankan siklus terjadwal harian pada jam 5 pagi... [${new Date().toISOString()}]`);
+    runWorkflow();
+}, {
+    scheduled: true,
+    timezone: "Asia/Jakarta" // <-- PENTING: Tentukan zona waktu!
+});

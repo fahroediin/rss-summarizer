@@ -2,10 +2,8 @@ const TelegramBot = require('node-telegram-bot-api');
 const { createClient } = require('@supabase/supabase-js');
 const config = require('../config/environment');
 
-// Inisialisasi Supabase client untuk membaca data
 const supabase = createClient(config.supabaseUrl, config.supabaseKey);
 
-// Fungsi ini sama persis seperti sebelumnya, kita gunakan lagi
 async function getRecentSummaries() {
     const twentyFourHoursAgo = new Date(new Date() - 24 * 60 * 60 * 1000).toISOString();
     const { data, error } = await supabase
@@ -21,14 +19,9 @@ async function getRecentSummaries() {
     return data;
 }
 
-/**
- * Mengirim ringkasan berita ke Telegram.
- * Jauh lebih sederhana: tidak perlu inisialisasi, QR, atau koneksi persisten.
- */
 async function sendTelegramNotification() {
     console.log('Notifier Agent: Menyiapkan pengiriman ke Telegram...');
 
-    // Validasi konfigurasi
     if (!config.telegram.botToken || !config.telegram.chatId) {
         console.error('❌ Error: Token atau Chat ID Telegram tidak ditemukan di file .env');
         return;
@@ -40,37 +33,66 @@ async function sendTelegramNotification() {
         return;
     }
 
-    // Inisialisasi bot. Tidak perlu polling karena kita hanya mengirim.
     const bot = new TelegramBot(config.telegram.botToken);
 
-    // Pesan pembuka
-    const headerMessage = `*Ringkasan Berita Terkini* ☀️\n\nBerikut adalah rangkuman dari berbagai sumber berita dalam 24 jam terakhir:`;
-    await bot.sendMessage(config.telegram.chatId, headerMessage, { parse_mode: 'Markdown' });
+    // --- MEMBANGUN SATU PESAN TUNGGAL ---
+    let fullMessage = `*Ringkasan Berita Terkini* ☀️\n\n`;
+    fullMessage += `Berikut adalah rangkuman dari berbagai sumber berita dalam 24 jam terakhir:\n`;
 
-    // Kirim satu pesan per kategori untuk menghindari batas karakter Telegram (4096)
     for (const summary of summaries) {
-        let categoryMessage = `--------------------\n\n`;
-        categoryMessage += `*Kategori: ${summary.category}*\n\n`;
-        categoryMessage += `${summary.summary_text}\n\n`;
-        categoryMessage += `_Sumber Berita Terkait:_\n`;
+        fullMessage += `\n--------------------\n\n`;
+        fullMessage += `*Kategori: ${summary.category}*\n\n`;
+        // Gunakan format italic untuk ringkasan agar lebih menonjol
+        fullMessage += `_${summary.summary_text.trim()}_\n\n`;
+        fullMessage += `*Sumber Berita Terkait:*\n`;
         
         summary.articles.slice(0, 3).forEach(article => {
+            // Membersihkan judul dari karakter yang bisa merusak Markdown
+            const cleanTitle = article.title.replace(/[[\]()]/g, '');
             // Format Markdown untuk link: [Teks](URL)
-            categoryMessage += `- [${article.title}](${article.link})\n`;
+            fullMessage += `- [${cleanTitle}](${article.link})\n`;
         });
+    }
 
-        try {
-            // Kirim pesan untuk kategori ini
-            await bot.sendMessage(config.telegram.chatId, categoryMessage, { 
-                parse_mode: 'Markdown',
-                disable_web_page_preview: true // Agar tidak memunculkan preview link yang besar
-            });
-            console.log(`✅ Pesan untuk kategori [${summary.category}] berhasil dikirim.`);
-        } catch (error) {
-            console.error(`❌ Gagal mengirim pesan untuk kategori [${summary.category}]:`, error.message);
+    // --- MENGIRIM PESAN ---
+    try {
+        // Kirim pesan tunggal yang sudah dibangun
+        await bot.sendMessage(config.telegram.chatId, fullMessage, { 
+            parse_mode: 'Markdown',
+            disable_web_page_preview: true 
+        });
+        console.log(`✅ Ringkasan lengkap berhasil dikirim ke Telegram.`);
+    } catch (error) {
+        // Penanganan jika pesan terlalu panjang (batas 4096 karakter)
+        if (error.response && error.response.body.description.includes('message is too long')) {
+            console.warn('⚠️ Pesan terlalu panjang, mencoba mengirim per kategori...');
+            // Fallback: kirim per kategori jika pesan gabungan gagal
+            await sendInChunks(bot, summaries);
+        } else {
+            console.error(`❌ Gagal mengirim pesan gabungan:`, error.message);
         }
     }
-    console.log('Notifier Agent: Semua notifikasi Telegram telah dikirim.');
+}
+
+// Fungsi fallback jika pesan gabungan terlalu panjang
+async function sendInChunks(bot, summaries) {
+    for (const summary of summaries) {
+        let chunkMessage = `*Kategori: ${summary.category}*\n\n`;
+        chunkMessage += `_${summary.summary_text.trim()}_\n\n`;
+        chunkMessage += `*Sumber Berita Terkait:*\n`;
+        summary.articles.slice(0, 3).forEach(article => {
+            const cleanTitle = article.title.replace(/[[\]()]/g, '');
+            chunkMessage += `- [${cleanTitle}](${article.link})\n`;
+        });
+        try {
+            await bot.sendMessage(config.telegram.chatId, chunkMessage, { 
+                parse_mode: 'Markdown',
+                disable_web_page_preview: true 
+            });
+        } catch (e) {
+            console.error(`Gagal mengirim chunk untuk kategori ${summary.category}:`, e.message);
+        }
+    }
 }
 
 module.exports = { sendTelegramNotification };

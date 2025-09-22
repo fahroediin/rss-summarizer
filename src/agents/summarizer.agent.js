@@ -1,7 +1,8 @@
 const { initializeGeminiClient } = require('../services/llm.service');
 const { saveSummaryAndArticles } = require('../services/supabase.service');
 const { fetchArticleContent } = require('../utils/content.fetcher');
-const { summarizeLongText } = require('../utils/text.processor');
+// Impor fungsi baru dan hapus yang lama jika tidak dipakai
+const { synthesizeMultipleContents } = require('../utils/text.processor');
 const config = require('../config/environment');
 
 const geminiSummarizerClient = initializeGeminiClient(config.gemini.summarizer);
@@ -17,25 +18,35 @@ async function processAndStoreSummaries(categorizedArticles) {
     for (const category in articlesByCategory) {
         if (category === 'Lainnya' || articlesByCategory[category].length < 1) continue;
 
-        const articlesForSummary = articlesByCategory[category].slice(0, 5);
-        const mainArticle = articlesForSummary[0];
-
+        // Ambil hingga 3 artikel teratas untuk disintesis agar tidak terlalu berat
+        const articlesForSummary = articlesByCategory[category].slice(0, 3);
+        
         try {
-            const fullContent = await fetchArticleContent(mainArticle.link);
-            if (!fullContent) {
-                console.warn(`- Gagal mengambil konten untuk [${mainArticle.title}]. Melewati kategori [${category}].`);
+            // 1. Ambil konten penuh dari SEMUA artikel yang dipilih
+            const contentPromises = articlesForSummary.map(article => fetchArticleContent(article.link));
+            const allContents = await Promise.all(contentPromises);
+
+            // Filter konten yang gagal diambil
+            const validContents = allContents.filter(content => content !== null && content.length > 100);
+
+            if (validContents.length === 0) {
+                console.warn(`- Gagal mengambil konten untuk semua artikel di kategori [${category}]. Melewati.`);
                 continue;
             }
 
-            console.log(`- Summarizing full content for category [${category}]...`);
-            const summaryText = await summarizeLongText(fullContent, geminiSummarizerClient);
+            // 2. Gunakan fungsi sintesis baru
+            const summaryText = await synthesizeMultipleContents(validContents, category, geminiSummarizerClient);
 
+            // 3. Guardrail
             if (!summaryText || summaryText.length < 50) {
-                console.warn(`- Guardrail: Ringkasan untuk [${category}] terlalu pendek atau gagal. Melewati.`);
+                console.warn(`- Guardrail: Ringkasan sintesis untuk [${category}] terlalu pendek atau gagal. Melewati.`);
                 continue;
             }
 
-            await saveSummaryAndArticles(category, summaryText, articlesForSummary);
+            // 4. Simpan ke database (gunakan semua artikel yang di-fetch untuk kategori ini sebagai referensi)
+            const allArticlesInCategory = articlesByCategory[category];
+            await saveSummaryAndArticles(category, summaryText, allArticlesInCategory);
+
         } catch (error) {
             console.error(`- Gagal memproses ringkasan untuk kategori [${category}]`, error.message);
         }

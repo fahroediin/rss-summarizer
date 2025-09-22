@@ -31,5 +31,40 @@ async function summarizeLongText(text, model) {
 
     return finalSummary;
 }
+/**
+ * Mensintesis beberapa konten artikel menjadi satu ringkasan tematik yang koheren.
+ * @param {Array<string>} contents - Array berisi konten teks dari beberapa artikel.
+ * @param {string} category - Nama kategori untuk memberikan konteks pada AI.
+ * @param {GenerativeModel} model - Instance model Gemini.
+ * @returns {Promise<string>} Ringkasan sintesis.
+ */
+async function synthesizeMultipleContents(contents, category, model) {
+    // Gabungkan semua konten menjadi satu teks besar, dipisahkan oleh pembatas yang jelas.
+    const combinedText = contents
+        .map((content, index) => `--- ARTIKEL ${index + 1} ---\n${content}`)
+        .join('\n\n');
 
-module.exports = { summarizeLongText };
+    // Prompt Engineering: Instruksi yang jauh lebih spesifik
+    const prompt = `
+        Anda adalah seorang editor berita senior yang sangat cerdas.
+        Tugas Anda adalah membaca beberapa artikel berita dalam kategori "${category}" dan menulis sebuah ringkasan SINTESIS yang menangkap tema-tema utama, tren, atau peristiwa paling signifikan dari SEMUA artikel tersebut.
+
+        ATURAN:
+        1. JANGAN hanya meringkas satu artikel. Temukan benang merah atau poin-poin penting dari semua artikel yang disediakan.
+        2. Tulis dalam 2-4 paragraf singkat atau poin-poin (bullet points).
+        3. Gunakan Bahasa Indonesia yang formal dan netral.
+        4. Fokus pada "apa" dan "mengapa" dari berita-berita tersebut secara kolektif.
+
+        Berikut adalah konten dari beberapa artikel berita:
+        ${combinedText}
+    `;
+
+    console.log(`- Synthesizing ${contents.length} articles for category [${category}]...`);
+    
+    // Kita bisa menggunakan summarizeLongText jika gabungan teksnya sangat panjang,
+    // tapi untuk 3-5 artikel, biasanya satu panggilan langsung sudah cukup dan lebih baik hasilnya.
+    // Jika Anda sering mengalami error token di sini, baru gunakan strategi Map-Reduce.
+    return getGeminiResponse(model, prompt);
+}
+
+module.exports = { summarizeLongText, synthesizeMultipleContents };
