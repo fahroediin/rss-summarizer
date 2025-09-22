@@ -3,7 +3,7 @@ const { fetchArticles } = require('./src/agents/fetcher.agent');
 const { categorizeArticle } = require('./src/agents/categorizer.agent');
 const { processAndStoreSummaries } = require('./src/agents/summarizer.agent');
 const { delay } = require('./src/utils/delay');
-const { initializeAndSend: sendWhatsAppNotification } = require('./src/services/whatsapp.service');
+const { sendTelegramNotification } = require('./src/services/telegram.service');
 
 async function runWorkflow() {
     console.log(`\n===== Memulai Alur Kerja Summarizer [${new Date().toISOString()}] =====`);
@@ -40,9 +40,9 @@ async function runWorkflow() {
     // 3. Summarizer Agent
     await processAndStoreSummaries(categorizedArticles);
     
-    // 4. Notifier Agent
+    // 4. NOTIFIER AGENT
     console.log('===== Memulai Tahap Notifikasi =====');
-    await sendWhatsAppNotification();
+    await sendTelegramNotification();
 
     console.log('===== Alur Kerja Selesai =====');
 }
