@@ -2,94 +2,106 @@ const cron = require('node-cron');
 const config = require('./src/config/environment');
 const { fetchArticles } = require('./src/agents/fetcher.agent');
 const { categorizeArticle } = require('./src/agents/categorizer.agent');
-const { processAndStoreSummaries } = require('./src/agents/summarizer.agent');
+const { summarizePendingArticles } = require('./src/agents/summarizer.agent');
 const { delay } = require('./src/utils/delay');
 const { sendTelegramNotification } = require('./src/services/telegram.service');
-// Impor fungsi baru dari supabase.service
-const { findExistingLinks } = require('./src/services/supabase.service');
+const { findExistingLinks, saveCategorizedArticles } = require('./src/services/supabase.service');
 
-async function runWorkflow() {
-    console.log(`\n===== Memulai Alur Kerja Summarizer [${new Date().toISOString()}] =====`);
-
-    // 1. Fetcher Agent
+/**
+ * Alur Kerja 1: Ingestion
+ * Mengambil, memfilter, mengkategorikan, dan menyimpan artikel baru.
+ */
+async function runIngestionWorkflow() {
+    console.log('\n===== Memulai Alur Kerja Ingestion =====');
     const allArticles = await fetchArticles();
     if (allArticles.length === 0) {
-        console.log('Tidak ada artikel ditemukan dari RSS. Alur kerja selesai.');
-        // Kita tetap jalankan notifikasi, mungkin ada ringkasan lama yang belum terkirim
-        await sendTelegramNotification();
+        console.log('Ingestion: Tidak ada artikel ditemukan dari RSS.');
         return;
     }
 
-    // =================================================================
-    // LANGKAH BARU: DEDUPLIKASI ARTIKEL
-    // =================================================================
-    console.log(`- Total artikel di-fetch: ${allArticles.length}. Memeriksa duplikat di database...`);
-    
-    // Ambil semua link dari artikel yang di-fetch
     const fetchedLinks = allArticles.map(article => article.link);
-    
-    // Tanyakan ke Supabase link mana yang sudah ada
     const existingLinks = await findExistingLinks(fetchedLinks);
-
-    // Filter untuk mendapatkan hanya artikel yang benar-benar baru
     const newArticles = allArticles.filter(article => !existingLinks.has(article.link));
     
-    console.log(`- Ditemukan ${newArticles.length} artikel baru untuk diproses.`);
-    // =================================================================
-
-    // Jika tidak ada artikel baru, kita bisa lewati proses AI dan langsung kirim notifikasi
     if (newArticles.length === 0) {
-        console.log('Tidak ada artikel baru. Melewati tahap kategorisasi dan peringkasan.');
-    } else {
-        // 2. Categorizer Agent (HANYA MEMPROSES ARTIKEL BARU)
-        console.log('Categorizer Agent: Memulai kategorisasi dengan batch processing...');
-        
-        const BATCH_SIZE = 8;
-        const DELAY_BETWEEN_BATCHES = 61000;
-        const categorizedArticles = [];
-
-        for (let i = 0; i < newArticles.length; i += BATCH_SIZE) {
-            const batch = newArticles.slice(i, i + BATCH_SIZE);
-            console.log(`- Memproses batch ${Math.floor(i / BATCH_SIZE) + 1} (artikel ${i + 1} sampai ${i + batch.length})`);
-
-            const categorizationPromises = batch.map(categorizeArticle);
-            const batchResults = await Promise.all(categorizationPromises);
-            categorizedArticles.push(...batchResults);
-
-            if (i + BATCH_SIZE < newArticles.length) {
-                console.log(`- Jeda ${DELAY_BETWEEN_BATCHES / 1000} detik sebelum batch berikutnya...`);
-                await delay(DELAY_BETWEEN_BATCHES);
-            }
-        }
-        console.log('Categorizer Agent: Selesai.');
-
-        // 3. Summarizer Agent (HANYA MEMPROSES ARTIKEL BARU)
-        await processAndStoreSummaries(categorizedArticles);
+        console.log('Ingestion: Tidak ada artikel baru untuk diproses.');
+        return;
     }
-    
-    // 4. Notifier Agent (tetap berjalan untuk mengirim ringkasan terbaru)
-    console.log('===== Memulai Tahap Notifikasi =====');
-    await sendTelegramNotification();
+    console.log(`Ingestion: Ditemukan ${newArticles.length} artikel baru. Memulai kategorisasi...`);
 
-    console.log('===== Alur Kerja Selesai =====');
+    const BATCH_SIZE = 8;
+    const DELAY_BETWEEN_BATCHES = 61000;
+    for (let i = 0; i < newArticles.length; i += BATCH_SIZE) {
+        const batch = newArticles.slice(i, i + BATCH_SIZE);
+        console.log(`- Memproses batch ${Math.floor(i / BATCH_SIZE) + 1} (artikel ${i + 1} sampai ${i + batch.length})`);
+        const categorizationPromises = batch.map(categorizeArticle);
+        const categorizedBatch = await Promise.all(categorizationPromises);
+        
+        await saveCategorizedArticles(categorizedBatch);
+
+        if (i + BATCH_SIZE < newArticles.length) {
+            console.log(`- Jeda ${DELAY_BETWEEN_BATCHES / 1000} detik sebelum batch berikutnya...`);
+            await delay(DELAY_BETWEEN_BATCHES);
+        }
+    }
+    console.log('===== Alur Kerja Ingestion Selesai =====');
 }
 
-// Jalankan sekali saat aplikasi dimulai
-runWorkflow();
+/**
+ * Alur Kerja 2: Summarization
+ * Mengambil artikel yang tertunda dari DB dan meringkasnya.
+ */
+async function runSummarizationWorkflow() {
+    console.log('\n===== Memulai Alur Kerja Summarization =====');
+    await summarizePendingArticles();
+    console.log('===== Alur Kerja Summarization Selesai =====');
+}
 
-// Validasi sederhana untuk string cron
+/**
+ * Alur Kerja 3: Notification
+ * Mengirim ringkasan terbaru ke pengguna.
+ */
+async function runNotificationWorkflow() {
+    console.log('\n===== Memulai Alur Kerja Notifikasi =====');
+    await sendTelegramNotification();
+    console.log('===== Alur Kerja Notifikasi Selesai =====');
+}
+
+/**
+ * FUNGSI UTAMA UNTUK MENJALANKAN SEMUA ALUR KERJA SECARA BERURUTAN
+ */
+async function runFullCycle() {
+    const startTime = Date.now();
+    console.log(`\n\n🚀 MEMULAI SIKLUS LENGKAP: [${new Date().toISOString()}]`);
+    
+    await runIngestionWorkflow();
+    await runSummarizationWorkflow();
+    await runNotificationWorkflow();
+    
+    const endTime = Date.now();
+    const duration = ((endTime - startTime) / 1000).toFixed(2);
+    console.log(`\n🏁 SIKLUS LENGKAP SELESAI. Durasi: ${duration} detik.`);
+}
+
+
+// --- CRON JOB ORCHESTRATOR ---
 if (!cron.validate(config.cronSchedule)) {
     console.error(`❌ Jadwal cron "${config.cronSchedule}" tidak valid. Harap periksa file .env Anda.`);
-    process.exit(1); // Keluar dari aplikasi jika jadwal tidak valid
+    process.exit(1);
 }
 
-// Jadwalkan tugas menggunakan konfigurasi dari .env
 cron.schedule(config.cronSchedule, () => {
-    console.log(`⏰ Menjalankan siklus terjadwal... [${new Date().toISOString()}]`);
-    runWorkflow();
+    // Fungsi di dalam cron sekarang hanya memanggil siklus penuh
+    runFullCycle();
 }, {
     scheduled: true,
     timezone: config.cronTimezone
 });
 
 console.log(`✅ Penjadwal (cron job) telah diaktifkan. Jadwal: "${config.cronSchedule}" di zona waktu "${config.cronTimezone}".`);
+
+// =================================================================
+// BAGIAN YANG HILANG SEBELUMNYA:
+// Jalankan satu siklus penuh saat aplikasi pertama kali dimulai untuk testing/immediate run.
+// =================================================================
+runFullCycle();

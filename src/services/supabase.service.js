@@ -3,7 +3,67 @@ const config = require('../config/environment');
 
 const supabase = createClient(config.supabaseUrl, config.supabaseKey);
 
-async function saveSummaryAndArticles(category, summaryText, sourceArticles) {
+/**
+ * Menyimpan artikel yang baru dikategorikan ke database.
+ * Menggunakan 'upsert' dengan ON CONFLICT untuk menghindari duplikasi berdasarkan link.
+ * @param {Array<object>} articles - Array artikel yang sudah memiliki properti 'category'.
+ */
+async function saveCategorizedArticles(articles) {
+    if (!articles || articles.length === 0) return;
+
+    const articlesToInsert = articles.map(article => ({
+        title: article.title,
+        link: article.link,
+        source: article.source,
+        published_at: article.pubDate,
+        category: article.category,
+        status: 'categorized', // Status awal
+    }));
+
+    const { error } = await supabase
+        .from('articles')
+        .insert(articlesToInsert, {
+            onConflict: 'link' // Jika link sudah ada, jangan lakukan apa-apa (abaikan)
+        });
+
+    if (error) {
+        console.error('Supabase Error (saveCategorizedArticles):', error.message);
+    } else {
+        console.log(`- Berhasil menyimpan/mengabaikan ${articles.length} artikel yang dikategorikan.`);
+    }
+}
+
+/**
+ * Mengambil artikel yang siap untuk diringkas, dikelompokkan berdasarkan kategori.
+ * @returns {Promise<object>} Objek di mana key adalah kategori dan value adalah array artikel.
+ */
+async function getArticlesToSummarize() {
+    const { data, error } = await supabase
+        .from('articles')
+        .select('*')
+        .eq('status', 'categorized'); // Ambil hanya yang berstatus 'categorized'
+
+    if (error) {
+        console.error('Supabase Error (getArticlesToSummarize):', error.message);
+        return {};
+    }
+
+    // Kelompokkan hasil berdasarkan kategori
+    return data.reduce((acc, article) => {
+        acc[article.category] = acc[article.category] || [];
+        acc[article.category].push(article);
+        return acc;
+    }, {});
+}
+
+/**
+ * Membuat record ringkasan baru dan mengupdate status artikel yang digunakan.
+ * @param {string} category - Kategori ringkasan.
+ * @param {string} summaryText - Teks ringkasan dari AI.
+ * @param {Array<object>} sourceArticles - Artikel yang digunakan untuk membuat ringkasan.
+ */
+async function createSummaryAndUpdateArticles(category, summaryText, sourceArticles) {
+    // 1. Buat record ringkasan baru
     const { data: summaryData, error: summaryError } = await supabase
         .from('summaries')
         .insert({ category, summary_text: summaryText })
@@ -11,62 +71,41 @@ async function saveSummaryAndArticles(category, summaryText, sourceArticles) {
         .single();
 
     if (summaryError) {
-        console.error('Supabase Error (insert summary):', summaryError.message);
+        console.error('Supabase Error (create summary):', summaryError.message);
         throw summaryError;
     }
-
     const summaryId = summaryData.id;
-    const articlesToInsert = sourceArticles.map(article => ({
-        summary_id: summaryId,
-        title: article.title,
-        link: article.link,
-        source: article.source,
-        published_at: article.pubDate,
-    }));
 
-    const { error: articlesError } = await supabase
+    // 2. Update status artikel yang digunakan
+    const articleIdsToUpdate = sourceArticles.map(a => a.id);
+    const { error: updateError } = await supabase
         .from('articles')
-        .insert(articlesToInsert);
+        .update({ status: 'summarized', summary_id: summaryId })
+        .in('id', articleIdsToUpdate);
 
-    if (articlesError) {
-        console.error('Supabase Error (insert articles):', articlesError.message);
-        throw articlesError;
+    if (updateError) {
+        console.error('Supabase Error (update articles):', updateError.message);
+        // Idealnya, kita harus melakukan rollback (menghapus summary yang baru dibuat)
+        throw updateError;
     }
 
-    console.log(`- Berhasil menyimpan ringkasan [${category}] dengan ${sourceArticles.length} artikel ke Supabase.`);
-    return { summaryId };
+    console.log(`- Berhasil membuat ringkasan [${category}] dan mengupdate ${articleIdsToUpdate.length} artikel.`);
 }
 
-/**
- * Memeriksa daftar link artikel di database dan mengembalikan link yang sudah ada.
- * @param {Array<string>} articleLinks - Array berisi URL artikel yang akan diperiksa.
- * @returns {Promise<Set<string>>} Sebuah Set yang berisi link-link yang sudah ada di database.
- */
+// Fungsi ini masih kita butuhkan untuk deduplikasi awal
 async function findExistingLinks(articleLinks) {
-    if (!articleLinks || articleLinks.length === 0) {
+    if (!articleLinks || articleLinks.length === 0) return new Set();
+    const { data, error } = await supabase.from('articles').select('link').in('link', articleLinks);
+    if (error) {
+        console.error('Supabase Error (findExistingLinks):', error.message);
         return new Set();
     }
-
-    try {
-        const { data, error } = await supabase
-            .from('articles')
-            .select('link')
-            .in('link', articleLinks); // .in() sangat efisien untuk query ini
-
-        if (error) {
-            console.error('Supabase Error (findExistingLinks):', error.message);
-            return new Set(); // Kembalikan set kosong jika ada error
-        }
-
-        // Ubah array hasil [{link: 'url1'}, {link: 'url2'}] menjadi Set {'url1', 'url2'}
-        // Menggunakan Set lebih cepat untuk pengecekan (lookup) daripada array.
-        return new Set(data.map(item => item.link));
-
-    } catch (error) {
-        console.error('Error in findExistingLinks:', error.message);
-        return new Set();
-    }
+    return new Set(data.map(item => item.link));
 }
 
-// Jangan lupa untuk mengekspor fungsi baru ini
-module.exports = { saveSummaryAndArticles, findExistingLinks };
+module.exports = {
+    saveCategorizedArticles,
+    getArticlesToSummarize,
+    createSummaryAndUpdateArticles,
+    findExistingLinks,
+};
