@@ -63,4 +63,29 @@ async function synthesizeMultipleContents(contents, category, model) {
     return getGeminiResponse(model, prompt);
 }
 
-module.exports = { summarizeLongText, synthesizeMultipleContents };
+/**
+ * Mengekstrak 3-5 poin kunci utama dari sebuah konten artikel.
+ * Ini adalah langkah "distilasi" yang cepat dan murah.
+ * @param {string} content - Konten teks penuh dari satu artikel.
+ * @param {GenerativeModel} model - Instance model Gemini.
+ * @returns {Promise<string>} String berisi poin-poin kunci.
+ */
+async function extractKeyPoints(content, model) {
+    // Potong konten jika terlalu panjang untuk ekstraksi cepat
+    const truncatedContent = content.substring(0, 10000);
+
+    const prompt = `
+        Anda adalah AI yang sangat efisien dalam menemukan inti informasi.
+        Baca teks berikut dan ekstrak 3-5 poin kunci paling penting dalam format bullet point (-).
+        Fokus pada fakta, angka, dan kesimpulan utama. JANGAN membuat paragraf atau kalimat pembuka.
+
+        Teks:
+        """
+        ${truncatedContent}
+        """
+    `;
+    return getGeminiResponse(model, prompt);
+}
+
+// Jangan lupa ekspor fungsi baru
+module.exports = { summarizeLongText, synthesizeMultipleContents, extractKeyPoints };
