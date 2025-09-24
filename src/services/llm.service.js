@@ -1,37 +1,38 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { delay } = require('../utils/delay');
+const { getGeminiResponse } = require('../services/llm.service');
 
-function initializeGeminiClient(apiKey) {
-    if (!apiKey) {
-        throw new Error("Gemini API Key is missing!");
-    }
-    const genAI = new GoogleGenerativeAI(apiKey);
-    return genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+/**
+ * Mengekstrak 3-4 FAKTA UTAMA dari sebuah konten artikel.
+ * Ini adalah langkah "distilasi" yang cepat dan murah.
+ * @param {string} content - Konten teks penuh dari satu artikel.
+ * @param {GenerativeModel} model - Instance model Gemini.
+ * @returns {Promise<string>} String berisi fakta-fakta utama.
+ */
+async function extractKeyPoints(content, model) {
+    const truncatedContent = content.substring(0, 10000);
+
+    // --- PROMPT DISTILASI YANG DISEMPURNAKAN ---
+    const prompt = `
+        Anda adalah seorang analis berita yang sangat efisien.
+        Tugas Anda adalah membaca teks berikut dan mengekstrak 3-4 FAKTA UTAMA yang paling penting.
+
+        ATURAN:
+        1. Gunakan format bullet point (-).
+        2. Setiap poin harus berupa kalimat tunggal yang ringkas dan padat informasi.
+        3. Fokus pada inti berita (Siapa, Apa, Kapan, di Mana, Mengapa).
+        4. Hindari opini atau detail yang tidak perlu.
+        5. JANGAN menulis kalimat pembuka atau penutup.
+
+        Teks:
+        """
+        ${truncatedContent}
+        """
+    `;
+    return getGeminiResponse(model, prompt);
 }
 
-async function getGeminiResponse(model, prompt) {
-    const MAX_RETRIES = 3;
-    let attempt = 0;
-    let currentDelay = 2000; // Jeda awal 2 detik
+// Fungsi-fungsi lama ini bisa tetap ada untuk referensi atau penggunaan di masa depan
+async function summarizeLongText(text, model) { /* ... implementasi lama ... */ }
+async function synthesizeMultipleContents(contents, category, model) { /* ... implementasi lama ... */ }
 
-    while (attempt < MAX_RETRIES) {
-        try {
-            const result = await model.generateContent(prompt);
-            const response = await result.response;
-            return response.text();
-        } catch (error) {
-            attempt++;
-            if (error.message.includes('429')) {
-                console.warn(`- Rate limit terdeteksi. Percobaan ${attempt}/${MAX_RETRIES}. Mencoba lagi dalam ${currentDelay / 1000} detik...`);
-                await delay(currentDelay);
-                currentDelay *= 2; // Exponential backoff
-            } else {
-                console.error("Error calling Gemini API (non-rate-limit):", error.message);
-                throw error;
-            }
-        }
-    }
-    throw new Error(`Gagal memanggil Gemini API setelah ${MAX_RETRIES} percobaan.`);
-}
 
-module.exports = { initializeGeminiClient, getGeminiResponse };
+module.exports = { summarizeLongText, synthesizeMultipleContents, extractKeyPoints };
