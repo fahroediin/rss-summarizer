@@ -43,7 +43,19 @@ async function summarizePendingArticles() {
 
             console.log(`- Tahap 2: Mensintesis ${allKeyPoints.length} set poin kunci...`);
             const combinedKeyPoints = allKeyPoints.join('\n\n');
-            const synthesisPrompt = `...`; // Prompt sintesis Anda di sini
+            const synthesisPrompt = `
+                Anda adalah seorang editor berita senior yang cerdas dan ringkas.
+                Berdasarkan KUMPULAN POIN-POIN KUNCI dari beberapa artikel berita berikut dalam kategori "${category}", tulis sebuah ringkasan SINTESIS yang koheren dalam 2-4 paragraf.
+                Gabungkan ide-ide yang serupa dan bentuk sebuah narasi yang mengalir.
+                LANGSUNG ke isi ringkasan. JANGAN menulis kalimat pembuka seperti "Berikut adalah sintesis...".
+
+                Kumpulan Poin Kunci:
+                """
+                ${combinedKeyPoints}
+                """
+            `;
+            // -----------------------------------------
+
             const summaryText = await getGeminiResponse(geminiSummarizerClient, synthesisPrompt);
 
             if (!summaryText || summaryText.length < 50) {
