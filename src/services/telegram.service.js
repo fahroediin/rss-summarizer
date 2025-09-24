@@ -2,15 +2,25 @@ const TelegramBot = require('node-telegram-bot-api');
 const { createClient } = require('@supabase/supabase-js');
 const config = require('../config/environment');
 
+// Inisialisasi Supabase client untuk membaca data
 const supabase = createClient(config.supabaseUrl, config.supabaseKey);
 
+/**
+ * Mengambil ringkasan yang dibuat pada "hari kemarin" (berdasarkan kalender).
+ * @returns {Promise<Array<object>>}
+ */
 async function getRecentSummaries() {
-    const twentyFourHoursAgo = new Date(new Date() - 24 * 60 * 60 * 1000).toISOString();
+    const startOfYesterday = "now()::date - interval '1 day'";
+    const startOfToday = "now()::date";
+
+    console.log(`- Mengambil ringkasan dari hari kemarin (antara ${startOfYesterday} dan ${startOfToday}).`);
+
     const { data, error } = await supabase
         .from('summaries')
         .select(`category, summary_text, articles ( title, link )`)
-        .gte('created_at', twentyFourHoursAgo)
-        .order('category', { ascending: true });
+        .gte('created_at', startOfYesterday)
+        .lt('created_at', startOfToday)
+        .order('category', { ascending: true }); // <-- Biarkan ini, urutan abjad adalah dasar yang baik
 
     if (error) {
         console.error("Error fetching summaries from Supabase:", error.message);
@@ -19,6 +29,9 @@ async function getRecentSummaries() {
     return data;
 }
 
+/**
+ * Mengirim ringkasan berita ke Telegram.
+ */
 async function sendTelegramNotification() {
     console.log('Notifier Agent: Menyiapkan pengiriman ke Telegram...');
 
@@ -29,24 +42,40 @@ async function sendTelegramNotification() {
 
     const summaries = await getRecentSummaries();
     if (summaries.length === 0) {
-        console.log('Notifier Agent: Tidak ada ringkasan baru untuk dikirim. Melewati.');
+        console.log('Notifier Agent: Tidak ada ringkasan dari hari kemarin untuk dikirim. Melewati.');
         return;
     }
 
+    // =================================================================
+    // LOGIKA BARU: PINDAHKAN KATEGORI "Lainnya" KE AKHIR
+    // =================================================================
+    const lainnyaIndex = summaries.findIndex(summary => summary.category === 'Lainnya');
+
+    // Jika kategori "Lainnya" ditemukan di dalam array
+    if (lainnyaIndex > -1) {
+        // 1. Hapus item "Lainnya" dari posisinya saat ini dan simpan ke dalam variabel
+        // .splice() mengembalikan array berisi item yang dihapus, jadi kita ambil item pertama ([0])
+        const lainnyaSummary = summaries.splice(lainnyaIndex, 1)[0];
+        
+        // 2. Tambahkan item tersebut ke akhir array
+        summaries.push(lainnyaSummary);
+        
+        console.log('- Kategori "Lainnya" dipindahkan ke urutan terakhir.');
+    }
+    // =================================================================
+
     const bot = new TelegramBot(config.telegram.botToken);
 
-    // --- LOGIKA PENGIRIMAN YANG DISEMPURNAKAN ---
-
     // 1. Kirim satu pesan pembuka (header)
-    const headerMessage = `*Ringkasan Berita Terkini* ☀️\n\nBerikut adalah rangkuman dari berbagai sumber berita dalam 24 jam terakhir:`;
+    const headerMessage = `*Ringkasan Berita Kemarin* ☀️\n\nBerikut adalah rangkuman dari berbagai sumber berita yang diproses kemarin:`;
     try {
         await bot.sendMessage(config.telegram.chatId, headerMessage, { parse_mode: 'Markdown' });
     } catch (e) {
         console.error('Gagal mengirim pesan pembuka:', e.message);
-        return; // Hentikan jika header saja gagal
+        return;
     }
 
-    // 2. Kirim setiap kategori sebagai pesan terpisah untuk keterbacaan
+    // 2. Kirim setiap kategori sebagai pesan terpisah dengan urutan yang sudah benar
     for (const summary of summaries) {
         let categoryMessage = `--------------------\n\n`;
         categoryMessage += `*Kategori: ${summary.category}*\n\n`;
@@ -59,7 +88,6 @@ async function sendTelegramNotification() {
         });
 
         try {
-            // Kirim pesan untuk kategori ini
             await bot.sendMessage(config.telegram.chatId, categoryMessage, { 
                 parse_mode: 'Markdown',
                 disable_web_page_preview: true 
