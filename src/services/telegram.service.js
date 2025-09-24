@@ -10,17 +10,29 @@ const supabase = createClient(config.supabaseUrl, config.supabaseKey);
  * @returns {Promise<Array<object>>}
  */
 async function getRecentSummaries() {
-    const startOfYesterday = "now()::date - interval '1 day'";
-    const startOfToday = "now()::date";
+    // --- LOGIKA WAKTU BARU: MENGHITUNG TANGGAL DI JAVASCRIPT ---
 
-    console.log(`- Mengambil ringkasan dari hari kemarin (antara ${startOfYesterday} dan ${startOfToday}).`);
+    // 1. Dapatkan tanggal hari ini dan set waktunya ke awal hari (00:00:00)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // 2. Dapatkan tanggal kemarin dengan mengurangi satu hari dari hari ini
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+
+    // 3. Konversi ke format string ISO yang dimengerti Supabase
+    const startOfYesterdayISO = yesterday.toISOString();
+    const startOfTodayISO = today.toISOString();
+
+    console.log(`- Mengambil ringkasan dari hari kemarin (antara ${startOfYesterdayISO} dan ${startOfTodayISO}).`);
 
     const { data, error } = await supabase
         .from('summaries')
         .select(`category, summary_text, articles ( title, link )`)
-        .gte('created_at', startOfYesterday)
-        .lt('created_at', startOfToday)
-        .order('category', { ascending: true }); // <-- Biarkan ini, urutan abjad adalah dasar yang baik
+        // Gunakan nilai string ISO yang sudah dihitung
+        .gte('created_at', startOfYesterdayISO)
+        .lt('created_at', startOfTodayISO)
+        .order('category', { ascending: true });
 
     if (error) {
         console.error("Error fetching summaries from Supabase:", error.message);
@@ -46,27 +58,17 @@ async function sendTelegramNotification() {
         return;
     }
 
-    // =================================================================
-    // LOGIKA BARU: PINDAHKAN KATEGORI "Lainnya" KE AKHIR
-    // =================================================================
+    // Logika untuk memindahkan kategori "Lainnya" ke akhir
     const lainnyaIndex = summaries.findIndex(summary => summary.category === 'Lainnya');
-
-    // Jika kategori "Lainnya" ditemukan di dalam array
     if (lainnyaIndex > -1) {
-        // 1. Hapus item "Lainnya" dari posisinya saat ini dan simpan ke dalam variabel
-        // .splice() mengembalikan array berisi item yang dihapus, jadi kita ambil item pertama ([0])
         const lainnyaSummary = summaries.splice(lainnyaIndex, 1)[0];
-        
-        // 2. Tambahkan item tersebut ke akhir array
         summaries.push(lainnyaSummary);
-        
         console.log('- Kategori "Lainnya" dipindahkan ke urutan terakhir.');
     }
-    // =================================================================
 
     const bot = new TelegramBot(config.telegram.botToken);
 
-    // 1. Kirim satu pesan pembuka (header)
+    // Kirim pesan pembuka
     const headerMessage = `*Ringkasan Berita Kemarin* ☀️\n\nBerikut adalah rangkuman dari berbagai sumber berita yang diproses kemarin:`;
     try {
         await bot.sendMessage(config.telegram.chatId, headerMessage, { parse_mode: 'Markdown' });
@@ -75,7 +77,7 @@ async function sendTelegramNotification() {
         return;
     }
 
-    // 2. Kirim setiap kategori sebagai pesan terpisah dengan urutan yang sudah benar
+    // Kirim setiap kategori sebagai pesan terpisah
     for (const summary of summaries) {
         let categoryMessage = `--------------------\n\n`;
         categoryMessage += `*Kategori: ${summary.category}*\n\n`;
