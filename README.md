@@ -34,8 +34,8 @@ Sebelum memulai, pastikan Anda memiliki:
 ### 1. Klon Repositori
 
 ```bash
-git clone https://github.com/username/fahroediin-rss-summarizer.git
-cd fahroediin-rss-summarizer
+git clone https://github.com/fahroediin/rss-summarizer.git
+cd rss-summarizer
 ```
 
 ### 2. Instal Dependensi
