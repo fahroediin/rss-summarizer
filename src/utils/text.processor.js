@@ -73,7 +73,7 @@ async function synthesizeMultipleContents(contents, category, model) {
 async function extractKeyPoints(content, model) {
     const truncatedContent = content.substring(0, 10000);
 
-    // --- PROMPT YANG DIPERBARUI ---
+    // --- PROMPT DISTILASI YANG DISEMPURNAKAN ---
     const prompt = `
         Anda adalah seorang analis berita yang sangat efisien.
         Tugas Anda adalah membaca teks berikut dan mengekstrak 3-4 FAKTA UTAMA yang paling penting.
